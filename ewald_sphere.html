@@ -1,0 +1,427 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
+<title>Ewald 球作圖</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: instrument bench — large reciprocal-space canvas left, control rack right, theory notes below */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --canvas:#fbfcfd; --ink:#16212b; --muted:#5d6b78; --line:#d5dce3;
+  --sphere:#0a7489; --sphere-fill:rgba(10,116,137,.06); --limit:#8a7aa8; --hit:#d4480c; --sel:#1d4ed8; --dot:#2b3742; --faint:#b9c3cc;
+  --ok:#137a3e; --warn:#a15c00; --bad:#b42318;
+  --f-display:"Noto Serif TC","Songti TC",serif;
+  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e141a; --panel:#151d25; --canvas:#0b1116; --ink:#e3e9ef; --muted:#93a2b0; --line:#26323d;
+  --sphere:#45c3d6; --sphere-fill:rgba(69,195,214,.07); --limit:#a898c8; --hit:#ff8a4c; --sel:#7aa7ff; --dot:#c6d1db; --faint:#3a4855;
+  --ok:#4fd18a; --warn:#f0b04a; --bad:#ff7b72; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e141a; --panel:#151d25; --canvas:#0b1116; --ink:#e3e9ef; --muted:#93a2b0; --line:#26323d;
+  --sphere:#45c3d6; --sphere-fill:rgba(69,195,214,.07); --limit:#a898c8; --hit:#ff8a4c; --sel:#7aa7ff; --dot:#c6d1db; --faint:#3a4855;
+  --ok:#4fd18a; --warn:#f0b04a; --bad:#ff7b72; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6;padding-inline:16px;padding-block:20px 48px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header h1{font-family:var(--f-display);font-weight:900;font-size:clamp(1.6rem,3.4vw,2.3rem);margin:0;letter-spacing:.02em;text-wrap:balance}
+header p{margin:4px 0 0;color:var(--muted);max-width:70ch}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
+@media (max-width:900px){.app{grid-template-columns:minmax(0,1fr)}}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:0;position:relative}
+#cv{display:block;width:100%;touch-action:none;cursor:grab}
+#cv.drag{cursor:grabbing}
+.stagebar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:3px;border-radius:2px;display:inline-block}
+.dotsw{width:9px;height:9px;border-radius:50%;display:inline-block}
+.zoom{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:4px}
+.zoom button{width:34px;height:34px;padding:0;font-size:18px}
+.rack{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:700}
+.row{display:grid;grid-template-columns:72px minmax(0,1fr) 64px;gap:8px;align-items:center;font-size:14px}
+.row output{font-family:var(--f-mono);font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--sphere)}
+select,button{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:6px 10px}
+select{width:100%}
+button{cursor:pointer}
+button:hover{border-color:var(--sphere)}
+button:focus-visible,select:focus-visible,input:focus-visible,#cv:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+button.primary{background:var(--sphere);color:var(--panel);border-color:var(--sphere);font-weight:700}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.checks{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:14px}
+.checks label{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13.5px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:2px 10px;border-radius:99px;border:1px solid currentColor}
+.pill.ok{color:var(--ok)}.pill.warn{color:var(--warn)}.pill.bad{color:var(--bad)}
+.hkl{font-family:var(--f-mono);font-weight:600;font-size:20px}
+#rv{display:block;width:100%;height:200px;border-radius:8px;background:var(--canvas);border:1px solid var(--line)}
+.list{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow:auto;font-family:var(--f-mono);font-size:13px}
+.list button{display:grid;grid-template-columns:70px 1fr 1fr;text-align:left;background:transparent;border:0;border-radius:5px;padding:3px 6px;font-family:var(--f-mono);font-size:13px}
+.list button:hover{background:var(--bg)}
+.list .hd{display:grid;grid-template-columns:70px 1fr 1fr;padding:0 6px;color:var(--muted);font-size:12px}
+.empty{color:var(--muted);font-size:13px}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.notes .card p{margin:0;font-size:14.5px}
+.notes h3{font-family:var(--f-display);font-weight:600;font-size:17px;margin:0}
+.eq{font-family:var(--f-mono);font-size:14px;background:var(--bg);border-radius:6px;padding:6px 10px;overflow-x:auto;white-space:nowrap}
+.hint{font-size:12.5px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Ewald 球作圖</h1>
+  <p>二維倒晶格（零層截面）與 Ewald 球的互動示範。調整晶格、波長與晶體方位，觀察哪些倒晶格點落在球面上，也就是哪些晶面滿足布拉格條件而產生繞射。</p>
+</header>
+
+<div class="app">
+  <div class="stage">
+    <canvas id="cv" tabindex="0" aria-label="倒晶格與 Ewald 球繪圖區"></canvas>
+    <div class="zoom"><button id="zin" aria-label="放大">+</button><button id="zout" aria-label="縮小">−</button></div>
+    <div class="stagebar">
+      <div class="legend">
+        <span><i class="sw" style="background:var(--sphere)"></i>Ewald 球 (半徑 1/λ)</span>
+        <span><i class="sw" style="background:var(--limit)"></i>極限球 (2/λ)</span>
+        <span><i class="dotsw" style="background:var(--hit)"></i>滿足繞射條件</span>
+        <span><i class="dotsw" style="background:var(--sel)"></i>選取的反射</span>
+      </div>
+      <span>拖曳平移・滾輪縮放・點擊選取倒晶格點</span>
+    </div>
+  </div>
+
+  <div class="rack">
+    <div class="card">
+      <h2>晶體（實空間）</h2>
+      <select id="latp" aria-label="晶格預設">
+        <option value="sq">正方 a = b = 4 Å, γ = 90°</option>
+        <option value="rect">長方 a = 4, b = 6 Å, γ = 90°</option>
+        <option value="hex">六方 a = b = 3.5 Å, γ = 120°</option>
+        <option value="obl">斜方 a = 4, b = 5 Å, γ = 105°</option>
+        <option value="custom">自訂</option>
+      </select>
+      <div class="row"><label for="ia">a (Å)</label><input id="ia" type="range" min="2" max="10" step="0.05"><output id="oa"></output></div>
+      <div class="row"><label for="ib">b (Å)</label><input id="ib" type="range" min="2" max="10" step="0.05"><output id="ob"></output></div>
+      <div class="row"><label for="ig">γ (°)</label><input id="ig" type="range" min="60" max="120" step="0.5"><output id="og"></output></div>
+      <div class="row"><label for="io">ω 方位</label><input id="io" type="range" min="-180" max="180" step="0.1"><output id="oo"></output></div>
+      <div class="btns"><button id="play" class="primary">▶ 旋轉晶體</button><button id="align">對準選取的反射</button></div>
+    </div>
+
+    <div class="card">
+      <h2>入射輻射</h2>
+      <select id="radp" aria-label="輻射源">
+        <option value="1.5406">Cu Kα — λ = 1.5406 Å</option>
+        <option value="0.7107">Mo Kα — λ = 0.7107 Å</option>
+        <option value="1.7890">Co Kα — λ = 1.7890 Å</option>
+        <option value="2.2897">Cr Kα — λ = 2.2897 Å</option>
+        <option value="0.02508">電子 200 kV — λ = 0.0251 Å</option>
+        <option value="custom">自訂</option>
+      </select>
+      <div class="row"><label for="il">λ (Å)</label><input id="il" type="range" min="0.02" max="3" step="0.001"><output id="ol"></output></div>
+      <div class="row"><label for="it">容許度</label><input id="it" type="range" min="0.001" max="0.04" step="0.001"><output id="ot"></output></div>
+      <p class="hint" style="margin:0">容許度代表球殼厚度（Å⁻¹），模擬鑲嵌結構、波長分散與有限晶粒造成的峰寬。</p>
+      <div class="checks">
+        <label><input id="cl" type="checkbox" checked>極限球</label>
+        <label><input id="cx" type="checkbox" checked>指數標籤</label>
+        <label><input id="cp" type="checkbox" checked>晶面跡線</label>
+      </div>
+      <button id="fit">重設視圖</button>
+    </div>
+  </div>
+</div>
+
+<div class="app">
+  <div class="card">
+    <h2>選取的反射</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="hkl" id="selhk">(2 1)</span><span id="selst" class="pill ok">—</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;align-items:start">
+      <dl class="kv" id="selkv" style="margin:0"></dl>
+      <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+        <canvas id="rv" aria-label="實空間晶面示意"></canvas>
+        <span class="hint">實空間：晶格點、(hk) 晶面族與入射／繞射光束。滿足條件時入射角 = 繞射角 = θ。</span>
+      </div>
+    </div>
+  </div>
+  <div class="rack">
+    <div class="card">
+      <h2>倒晶格參數</h2>
+      <dl class="kv" id="reckv" style="margin:0"></dl>
+    </div>
+    <div class="card">
+      <h2>目前在球面上的反射</h2>
+      <div class="list" id="hits"></div>
+    </div>
+    <div class="card">
+      <h2>旋轉紀錄</h2>
+      <div class="list" id="log"><span class="empty">按「旋轉晶體」後，倒晶格點穿過 Ewald 球時會記錄在此。</span></div>
+    </div>
+  </div>
+</div>
+
+<section class="notes">
+  <div class="card"><h3>倒晶格</h3>
+    <p>倒晶格向量滿足 a*·a = 1、a*·b = 0（b* 同理）。每個倒晶格點 G<sub>hk</sub> 對應一族實空間晶面 (hk)：方向垂直於晶面，長度為晶面間距的倒數。</p>
+    <div class="eq">G<sub>hk</sub> = h a* + k b*,   |G<sub>hk</sub>| = 1 / d<sub>hk</sub></div>
+  </div>
+  <div class="card"><h3>Ewald 球的建立</h3>
+    <p>把入射波向量 k₀ 的尾端放在球心 C，箭頭指向倒晶格原點 O (00)。以 C 為中心、1/λ 為半徑畫球，原點 O 必在球面上。</p>
+    <div class="eq">|k₀| = |k| = 1/λ（彈性散射）</div>
+  </div>
+  <div class="card"><h3>繞射條件</h3>
+    <p>任何落在球面上的倒晶格點 G 都滿足 Laue 條件，繞射光束沿 C → G 方向射出。這與布拉格定律等價，散射角為 2θ。</p>
+    <div class="eq">k − k₀ = G  ⇔  2d sinθ = λ</div>
+  </div>
+  <div class="card"><h3>極限球</h3>
+    <p>晶體轉到任何方位，Ewald 球掃過的範圍是以 O 為中心、半徑 2/λ 的極限球。球外的點永遠無法繞射，也就是 d &lt; λ/2 的晶面不會出現。</p>
+    <div class="eq">|G| ≤ 2/λ  ⇔  d ≥ λ/2</div>
+  </div>
+  <div class="card"><h3>旋轉晶體法</h3>
+    <p>旋轉晶體等於讓倒晶格繞 O 轉動。每當一個倒晶格點穿過球面，就出現一道繞射光。按「旋轉晶體」可觀察並記錄這些事件。</p>
+  </div>
+  <div class="card"><h3>電子繞射</h3>
+    <p>200 kV 電子的 λ ≈ 0.025 Å，球半徑約 40 Å⁻¹，相對於倒晶格間距幾乎是平面，因此一次就能截到整個倒晶格平面上的多個點，形成點陣繞射圖樣。</p>
+  </div>
+</section>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const D=Math.PI/180;
+const S={a:4,b:4,gam:90,lam:1.5406,om:0,tol:0.008,limit:true,labels:true,trace:true,sel:{h:2,k:1},playing:false};
+const PRE={sq:[4,4,90],rect:[4,6,90],hex:[3.5,3.5,120],obl:[4,5,105]};
+let view={x:0,y:0,s:200};
+let W=0,H=0,col={};
+const cv=$('cv'),ctx=cv.getContext('2d');
+const rv=$('rv'),rtx=rv.getContext('2d');
+const fmt=(x,n=3)=>Number.isFinite(x)?x.toFixed(n):'—';
+
+function readCol(){const cs=getComputedStyle(document.documentElement);
+  for(const k of ['canvas','ink','muted','line','sphere','sphere-fill','limit','hit','sel','dot','faint','panel'])col[k]=cs.getPropertyValue('--'+k).trim();}
+
+function basis(){
+  const g=S.gam*D,o=S.om*D,c=Math.cos(o),s=Math.sin(o);
+  const rot=v=>[v[0]*c-v[1]*s,v[0]*s+v[1]*c];
+  const a1=rot([S.a,0]),a2=rot([S.b*Math.cos(g),S.b*Math.sin(g)]);
+  const det=a1[0]*a2[1]-a1[1]*a2[0];
+  return {a1,a2,as:[a2[1]/det,-a2[0]/det],bs:[-a1[1]/det,a1[0]/det]};
+}
+const Gv=(B,h,k)=>[h*B.as[0]+k*B.bs[0],h*B.as[1]+k*B.bs[1]];
+const dev=(G,K)=>Math.hypot(G[0]+K,G[1])-K;
+const toS=(x,y)=>[W/2+(x-view.x)*view.s,H/2-(y-view.y)*view.s];
+const toW=(sx,sy)=>[(sx-W/2)/view.s+view.x,-(sy-H/2)/view.s+view.y];
+
+function arrow(c,x1,y1,x2,y2,color,w=2,dash){
+  c.save();c.strokeStyle=color;c.fillStyle=color;c.lineWidth=w;if(dash)c.setLineDash(dash);
+  c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();c.setLineDash([]);
+  const a=Math.atan2(y2-y1,x2-x1),L=10;
+  if(Math.hypot(x2-x1,y2-y1)>12){c.beginPath();c.moveTo(x2,y2);c.lineTo(x2-L*Math.cos(a-.35),y2-L*Math.sin(a-.35));c.lineTo(x2-L*Math.cos(a+.35),y2-L*Math.sin(a+.35));c.closePath();c.fill();}
+  c.restore();
+}
+function label(c,t,x,y,color,font='12px'){c.fillStyle=color;c.font=`${font} ${getComputedStyle(document.body).getPropertyValue('--f-mono')||'monospace'}`;c.fillText(t,x,y);}
+const bar=n=>n<0?String(-n).split('').map(c=>c+'̅').join(''):String(n);
+const hkStr=(h,k)=>bar(h)+bar(k);
+const hkTxt=(h,k)=>`(${h} ${k})`;
+
+function fitView(){
+  const K=1/S.lam;
+  if(K>3){view.x=0;view.y=0;view.s=Math.min(W,H)/(2*1.6);}
+  else if(S.limit){view.x=0;view.y=0;view.s=Math.min(W,H)/(2*2*K*1.08);}
+  else{view.x=-K;view.y=0;view.s=Math.min(W,H)/(2*K*1.2);}
+}
+
+function hitsAll(B,K){
+  const lim=2*K,out=[];
+  const N1=Math.min(80,Math.ceil(lim*Math.hypot(...B.a1))),N2=Math.min(80,Math.ceil(lim*Math.hypot(...B.a2)));
+  for(let h=-N1;h<=N1;h++)for(let k=-N2;k<=N2;k++){
+    if(!h&&!k)continue;const G=Gv(B,h,k),g=Math.hypot(...G);if(g>lim+S.tol)continue;
+    out.push({h,k,G,g,d:dev(G,K)});}
+  return out;
+}
+
+function draw(){
+  readCol();
+  const B=basis(),K=1/S.lam,s=view.s;
+  ctx.fillStyle=col.canvas;ctx.fillRect(0,0,W,H);
+  const [ox,oy]=toS(0,0),[cx,cy]=toS(-K,0);
+  // beam axis
+  ctx.save();ctx.strokeStyle=col.line;ctx.setLineDash([2,5]);ctx.beginPath();ctx.moveTo(0,oy);ctx.lineTo(W,oy);ctx.stroke();ctx.restore();
+  // limiting sphere
+  if(S.limit){ctx.save();ctx.strokeStyle=col.limit;ctx.lineWidth=1.3;ctx.setLineDash([7,6]);ctx.beginPath();ctx.arc(ox,oy,2*K*s,0,7);ctx.stroke();ctx.restore();
+    const [lx,ly]=toS(Math.cos(-.6)*2*K,Math.sin(-.6)*2*K);if(lx<W-90&&ly<H-10)label(ctx,'極限球 2/λ',lx+6,ly+14,col.limit);}
+  // Ewald sphere
+  ctx.save();ctx.fillStyle=col['sphere-fill'];ctx.strokeStyle=col.sphere;ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,K*s,0,7);ctx.fill();ctx.stroke();
+  if(S.tol*s>1.5){ctx.globalAlpha=.25;ctx.lineWidth=2*S.tol*s;ctx.beginPath();ctx.arc(cx,cy,K*s,0,7);ctx.stroke();}
+  ctx.restore();
+  {const [ex,ey]=toS(-K+K*Math.cos(2.2),K*Math.sin(2.2));if(ex>0&&ey>0)label(ctx,'Ewald 球 1/λ',ex+8,ey-6,col.sphere,'600 12px');}
+  // lattice points (visible window)
+  const cs=[[0,0],[W,0],[0,H],[W,H]].map(p=>toW(...p));
+  const hh=cs.map(p=>p[0]*B.a1[0]+p[1]*B.a1[1]),kk=cs.map(p=>p[0]*B.a2[0]+p[1]*B.a2[1]);
+  const h0=Math.floor(Math.min(...hh)),h1=Math.ceil(Math.max(...hh)),k0=Math.floor(Math.min(...kk)),k1=Math.ceil(Math.max(...kk));
+  const spacing=Math.min(Math.hypot(...B.as),Math.hypot(...B.bs))*s;
+  const dense=(h1-h0+1)*(k1-k0+1)>90000;
+  const showLab=S.labels&&spacing>30;
+  const hits=[];
+  if(!dense){
+    for(let h=h0;h<=h1;h++)for(let k=k0;k<=k1;k++){
+      const G=Gv(B,h,k),[px,py]=toS(G[0],G[1]);if(px<-10||py<-10||px>W+10||py>H+10)continue;
+      const g=Math.hypot(...G),out=g>2*K,on=(h||k)&&Math.abs(dev(G,K))<=S.tol;
+      if(on){hits.push([h,k,px,py]);continue;}
+      ctx.fillStyle=out?col.faint:col.dot;ctx.beginPath();ctx.arc(px,py,(h||k)?Math.min(2.6,Math.max(1,spacing/10)):4,0,7);ctx.fill();
+      if(showLab&&(h||k))label(ctx,hkStr(h,k),px+4,py-4,out?col.faint:col.muted,'10px');
+    }
+  } else {label(ctx,'倒晶格點過密，請放大檢視',12,22,col.muted,'12px');}
+  // origin
+  ctx.save();ctx.strokeStyle=col.ink;ctx.lineWidth=2;ctx.beginPath();ctx.arc(ox,oy,5.5,0,7);ctx.stroke();ctx.restore();
+  label(ctx,'O (00)',ox+8,oy+16,col.ink,'600 12px');
+  // C
+  ctx.fillStyle=col.sphere;ctx.beginPath();ctx.arc(cx,cy,3.5,0,7);ctx.fill();label(ctx,'C',cx-14,cy-8,col.sphere,'600 12px');
+  // k0
+  arrow(ctx,cx,cy,ox,oy,col.ink,2);
+  label(ctx,'k₀',(cx+ox)/2-6,oy+18,col.ink,'600 13px');
+  // diffracted beams for hits
+  for(const [h,k,px,py] of hits){
+    ctx.save();ctx.globalAlpha=.45;arrow(ctx,cx,cy,px,py,col.hit,1.2);ctx.restore();
+  }
+  for(const [h,k,px,py] of hits){
+    ctx.save();ctx.fillStyle=col.hit;ctx.shadowColor=col.hit;ctx.shadowBlur=10;ctx.beginPath();ctx.arc(px,py,5.5,0,7);ctx.fill();ctx.restore();
+    if(S.labels)label(ctx,hkStr(h,k),px+8,py-7,col.hit,'600 12px');
+  }
+  // selected
+  const {h,k}=S.sel;
+  if(h||k){
+    const G=Gv(B,h,k),[gx,gy]=toS(...G),on=Math.abs(dev(G,K))<=S.tol;
+    if(S.trace){const g=Math.hypot(...G),ux=-G[1]/g,uy=G[0]/g,L=K*.55;
+      const [p1x,p1y]=toS(-K+ux*L,uy*L),[p2x,p2y]=toS(-K-ux*L,-uy*L);
+      ctx.save();ctx.strokeStyle=col.sel;ctx.globalAlpha=.6;ctx.setLineDash([4,4]);ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(p1x,p1y);ctx.lineTo(p2x,p2y);ctx.stroke();ctx.restore();
+      label(ctx,`(${h} ${k}) 晶面`,p1x+4,p1y,col.sel,'11px');}
+    arrow(ctx,ox,oy,gx,gy,col.sel,2.2,on?null:[6,4]);
+    label(ctx,'G',(ox+gx)/2+6,(oy+gy)/2-6,col.sel,'700 13px');
+    if(on){arrow(ctx,cx,cy,gx,gy,col.hit,2.2);label(ctx,'k',(cx+gx)/2-14,(cy+gy)/2-6,col.hit,'700 13px');
+      const a2=Math.atan2(-(G[1]),G[0]+K);const r=Math.min(46,K*s*.3);
+      ctx.save();ctx.strokeStyle=col.hit;ctx.lineWidth=1.3;ctx.beginPath();ctx.arc(cx,cy,r,Math.min(0,a2),Math.max(0,a2));ctx.stroke();ctx.restore();
+      label(ctx,'2θ',cx+r+4,cy+(a2<0?-6:14),col.hit,'600 12px');}
+    ctx.save();ctx.strokeStyle=col.sel;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(gx,gy,8,0,7);ctx.stroke();ctx.restore();
+    if(!on)label(ctx,hkStr(h,k),gx+10,gy-8,col.sel,'600 12px');
+  }
+  // scale bar
+  {let L=0.1;const opts=[0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20];for(const o of opts){if(o*s>60){L=o;break;}}
+   const x=14,y=H-16;ctx.strokeStyle=col.muted;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+L*s,y);ctx.stroke();label(ctx,`${L} Å⁻¹`,x,y-6,col.muted,'11px');}
+  drawReal(B,K);
+  panels(B,K);
+}
+
+function drawReal(B,K){
+  const r=rv.getBoundingClientRect(),w=r.width,h=200,d=devicePixelRatio||1;
+  if(rv.width!==Math.round(w*d)){rv.width=Math.round(w*d);rv.height=h*d;}
+  rtx.setTransform(d,0,0,d,0,0);rtx.fillStyle=col.canvas;rtx.fillRect(0,0,w,h);
+  const sc=Math.min(w,h)/(5*Math.max(S.a,S.b)),tx=(x,y)=>[w/2+x*sc,h/2-y*sc];
+  const {h:H1,k:K1}=S.sel;
+  if(H1||K1){const G=Gv(B,H1,K1),g2=G[0]**2+G[1]**2,g=Math.sqrt(g2);
+    const corners=[[-w/2,-h/2],[w/2,-h/2],[-w/2,h/2],[w/2,h/2]].map(([x,y])=>(x*G[0]+y*G[1])/sc);
+    const n0=Math.floor(Math.min(...corners)),n1=Math.ceil(Math.max(...corners));
+    if((1/g)*sc>3&&n1-n0<200){rtx.save();rtx.strokeStyle=col.sel;rtx.globalAlpha=.55;rtx.lineWidth=1;
+      const ux=-G[1]/g,uy=G[0]/g,L=w;
+      for(let n=n0;n<=n1;n++){const px=n*G[0]/g2,py=n*G[1]/g2,[x1,y1]=tx(px+ux*L,py+uy*L),[x2,y2]=tx(px-ux*L,py-uy*L);rtx.beginPath();rtx.moveTo(x1,y1);rtx.lineTo(x2,y2);rtx.stroke();}
+      rtx.restore();}
+    // beams
+    const kx=G[0]+K,ky=G[1],kl=Math.hypot(kx,ky),R=Math.min(w,h)*.42,on=Math.abs(dev(G,K))<=S.tol;
+    arrow(rtx,w/2-R,h/2,w/2,h/2,col.ink,2);
+    arrow(rtx,w/2,h/2,w/2+kx/kl*R,h/2-ky/kl*R,on?col.hit:col.faint,2,on?null:[5,4]);
+    label(rtx,'入射',w/2-R,h/2-6,col.ink,'11px');
+  }
+  rtx.fillStyle=col.dot;
+  for(let i=-8;i<=8;i++)for(let j=-8;j<=8;j++){const x=i*B.a1[0]+j*B.a2[0],y=i*B.a1[1]+j*B.a2[1],[px,py]=tx(x,y);if(px<-4||px>w+4||py<-4||py>h+4)continue;rtx.beginPath();rtx.arc(px,py,2.6,0,7);rtx.fill();}
+}
+
+function panels(B,K){
+  const as=Math.hypot(...B.as),bs=Math.hypot(...B.bs);
+  $('reckv').innerHTML=`<dt>|a*| = 1/(a sinγ)</dt><dd>${fmt(as,4)} Å⁻¹</dd><dt>|b*| = 1/(b sinγ)</dt><dd>${fmt(bs,4)} Å⁻¹</dd><dt>γ* = 180° − γ</dt><dd>${fmt(180-S.gam,1)}°</dd><dt>Ewald 球半徑 1/λ</dt><dd>${fmt(K,4)} Å⁻¹</dd><dt>極限球半徑 2/λ</dt><dd>${fmt(2*K,4)} Å⁻¹</dd><dt>最小可觀測 d = λ/2</dt><dd>${fmt(S.lam/2,4)} Å</dd>`;
+  const {h,k}=S.sel;
+  if(!h&&!k){$('selhk').textContent='(0 0)';$('selst').className='pill warn';$('selst').textContent='原點';$('selkv').innerHTML='<dt>原點不對應任何晶面</dt><dd></dd>';return;}
+  const G=Gv(B,h,k),g=Math.hypot(...G),dv=dev(G,K),d=1/g,sb=S.lam*g/2;
+  const thB=sb<=1?Math.asin(sb)/D:NaN, thNow=Math.asin(Math.max(-1,Math.min(1,-G[0]/g)))/D;
+  const on=Math.abs(dv)<=S.tol, out=g>2*K;
+  $('selhk').textContent=hkTxt(h,k);
+  const st=$('selst');
+  if(out){st.className='pill bad';st.textContent='超出極限球，無法繞射';}
+  else if(on){st.className='pill ok';st.textContent='滿足布拉格條件';}
+  else{st.className='pill warn';st.textContent='未滿足繞射條件';}
+  $('selkv').innerHTML=`<dt>|G| = 1/d</dt><dd>${fmt(g,4)} Å⁻¹</dd><dt>晶面間距 d</dt><dd>${fmt(d,4)} Å</dd><dt>布拉格角 θ<sub>B</sub></dt><dd>${fmt(thB,2)}°</dd><dt>繞射角 2θ<sub>B</sub></dt><dd>${fmt(2*thB,2)}°</dd><dt>目前入射角 θ</dt><dd>${fmt(thNow,2)}°</dd><dt>偏離球面 Δ</dt><dd>${(dv>=0?'+':'')+fmt(dv,4)} Å⁻¹</dd><dt>2d sinθ<sub>B</sub></dt><dd>${fmt(2*d*sb,4)} Å = λ</dd>`;
+}
+
+let lastHitsKey='';
+function updateHits(){
+  const B=basis(),K=1/S.lam,list=hitsAll(B,K).filter(r=>Math.abs(r.d)<=S.tol).sort((a,b)=>a.g-b.g);
+  const key=list.map(r=>r.h+','+r.k).join(';')+S.lam;
+  if(key===lastHitsKey)return;lastHitsKey=key;
+  const el=$('hits');
+  if(!list.length){el.innerHTML='<span class="empty">目前沒有倒晶格點落在球面上。試著旋轉晶體或按「對準選取的反射」。</span>';return;}
+  el.innerHTML='<div class="hd"><span>(h k)</span><span>d (Å)</span><span>2θ (°)</span></div>'+list.slice(0,40).map(r=>{const tt=2*Math.asin(Math.min(1,S.lam*r.g/2))/D;return `<button data-h="${r.h}" data-k="${r.k}"><span>(${r.h} ${r.k})</span><span>${fmt(1/r.g,3)}</span><span>${fmt(tt,2)}</span></button>`;}).join('');
+}
+$('hits').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.sel={h:+b.dataset.h,k:+b.dataset.k};render();});
+
+// rotation
+let prev=new Map(),logs=[],lastT=0;
+function step(t){
+  if(!S.playing)return;
+  const dt=lastT?Math.min(.05,(t-lastT)/1000):0;lastT=t;
+  S.om+=dt*6;if(S.om>180)S.om-=360;
+  const B=basis(),K=1/S.lam;
+  for(const r of hitsAll(B,K)){const key=r.h+','+r.k,sg=Math.sign(r.d),p=prev.get(key);
+    if(p!==undefined&&p!==sg&&sg!==0&&Math.abs(r.d)<0.05){logs.unshift({h:r.h,k:r.k,om:S.om,tt:2*Math.asin(Math.min(1,S.lam*r.g/2))/D});if(logs.length>30)logs.pop();renderLog();}
+    prev.set(key,sg);}
+  syncInputs();render();requestAnimationFrame(step);
+}
+function renderLog(){$('log').innerHTML='<div class="hd"><span>(h k)</span><span>ω (°)</span><span>2θ (°)</span></div>'+logs.map(l=>`<button data-h="${l.h}" data-k="${l.k}"><span>(${l.h} ${l.k})</span><span>${fmt(l.om,1)}</span><span>${fmt(l.tt,2)}</span></button>`).join('');}
+$('log').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.sel={h:+b.dataset.h,k:+b.dataset.k};render();});
+$('play').onclick=()=>{S.playing=!S.playing;$('play').textContent=S.playing?'❚❚ 暫停':'▶ 旋轉晶體';if(S.playing){lastT=0;prev=new Map();requestAnimationFrame(step);}};
+
+function align(){
+  const B=basis(),K=1/S.lam,{h,k}=S.sel;if(!h&&!k)return;
+  const G=Gv(B,h,k),g=Math.hypot(...G),sb=S.lam*g/2;if(sb>1){render();return;}
+  const th=Math.asin(sb)/D,phi=Math.atan2(G[1],G[0])/D;
+  let om=S.om+(90+th-phi);om=((om+180)%360+360)%360-180;S.om=om;syncInputs();render();
+}
+$('align').onclick=align;
+
+// inputs
+function syncInputs(){
+  $('ia').value=S.a;$('ib').value=S.b;$('ig').value=S.gam;$('io').value=S.om;$('il').value=S.lam;$('it').value=S.tol;
+  $('oa').textContent=fmt(S.a,2);$('ob').textContent=fmt(S.b,2);$('og').textContent=fmt(S.gam,1)+'°';$('oo').textContent=fmt(S.om,1)+'°';$('ol').textContent=fmt(S.lam,4);$('ot').textContent=fmt(S.tol,3);
+}
+function render(){draw();updateHits();}
+const bind=(id,key,after)=>$(id).addEventListener('input',e=>{S[key]=+e.target.value;after&&after();syncInputs();render();});
+bind('ia','a',()=>$('latp').value='custom');bind('ib','b',()=>$('latp').value='custom');bind('ig','gam',()=>$('latp').value='custom');
+bind('io','om');bind('it','tol');
+bind('il','lam',()=>{$('radp').value='custom';});
+$('latp').onchange=e=>{const p=PRE[e.target.value];if(!p)return;[S.a,S.b,S.gam]=p;syncInputs();render();};
+$('radp').onchange=e=>{if(e.target.value==='custom')return;S.lam=+e.target.value;syncInputs();fitView();render();};
+$('cl').onchange=e=>{S.limit=e.target.checked;render();};
+$('cx').onchange=e=>{S.labels=e.target.checked;render();};
+$('cp').onchange=e=>{S.trace=e.target.checked;render();};
+$('fit').onclick=()=>{fitView();render();};
+const zoomAt=(f,sx,sy)=>{const [wx,wy]=toW(sx,sy);view.s=Math.max(2,Math.min(2e4,view.s*f));const [nx,ny]=toW(sx,sy);view.x+=wx-nx;view.y+=wy-ny;render();};
+$('zin').onclick=()=>zoomAt(1.3,W/2,H/2);$('zout').onclick=()=>zoomAt(1/1.3,W/2,H/2);
+cv.addEventListener('wheel',e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(Math.exp(-e.deltaY*0.0015),e.clientX-r.left,e.clientY-r.top);},{passive:false});
+let drag=null;
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y,moved:false};cv.classList.add('drag');});
+cv.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>4)drag.moved=true;if(drag.moved){view.x=drag.vx-dx/view.s;view.y=drag.vy+dy/view.s;draw();}});
+cv.addEventListener('pointerup',e=>{cv.classList.remove('drag');if(drag&&!drag.moved){const r=cv.getBoundingClientRect(),sx=e.clientX-r.left,sy=e.clientY-r.top,[wx,wy]=toW(sx,sy),B=basis();
+  const h=Math.round(wx*B.a1[0]+wy*B.a1[1]),k=Math.round(wx*B.a2[0]+wy*B.a2[1]),G=Gv(B,h,k),[px,py]=toS(...G);
+  if(Math.hypot(px-sx,py-sy)<16){S.sel={h,k};render();}}drag=null;});
+cv.addEventListener('pointercancel',()=>{drag=null;cv.classList.remove('drag');});
+
+function resize(){const w=cv.parentElement.getBoundingClientRect().width;const first=!W;W=w;H=Math.round(Math.max(340,Math.min(w*0.78,680)));
+  const d=devicePixelRatio||1;cv.style.height=H+'px';cv.width=Math.round(W*d);cv.height=Math.round(H*d);ctx.setTransform(d,0,0,d,0,0);if(first)fitView();render();}
+new ResizeObserver(()=>resize()).observe(cv.parentElement);
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>render());
+new MutationObserver(()=>render()).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+syncInputs();resize();align();
+</script>
+</body></html>
